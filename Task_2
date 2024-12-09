@@ -1,0 +1,80 @@
+# Required Libraries
+import pandas as pd
+import numpy as np
+from surprise import SVD, Dataset, Reader
+from surprise.model_selection import cross_validate
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Load Dataset
+
+data = pd.read_csv("task2_dataset.csv")
+
+# Display basic information
+print(data.head())
+print(data.info())
+
+# Preparing data for Surprise library
+reader = Reader(rating_scale=(data['rating'].min(), data['rating'].max()))
+data_surprise = Dataset.load_from_df(data[['user_id', 'item_id', 'rating']], reader)
+
+# Collaborative Filtering Model - SVD
+svd = SVD()
+cross_validate(svd, data_surprise, cv=5, verbose=True)
+
+# Train the model
+trainset = data_surprise.build_full_trainset()
+svd.fit(trainset)
+
+# Function to get predictions
+def get_collaborative_recommendations(user_id, num_recommendations=5):
+    items = data['item_id'].unique()
+    predictions = [(item, svd.predict(user_id, item).est) for item in items]
+    recommendations = sorted(predictions, key=lambda x: x[1], reverse=True)[:num_recommendations]
+    return [item for item, _ in recommendations]
+
+# Example usage
+print("Collaborative Recommendations for User 1:")
+print(get_collaborative_recommendations(1))
+
+### Content-Based Filtering Implementation ###
+# Create item profile using TF-IDF (e.g., description or features column)
+vectorizer = TfidfVectorizer(stop_words='english')
+tfidf_matrix = vectorizer.fit_transform(data['description'].fillna(''))
+
+# Compute cosine similarity
+item_similarity = cosine_similarity(tfidf_matrix, tfidf_matrix)
+
+# Function to get content-based recommendations
+def get_content_based_recommendations(item_id, num_recommendations=5):
+    item_index = data[data['item_id'] == item_id].index[0]
+    similarity_scores = list(enumerate(item_similarity[item_index]))
+    sorted_scores = sorted(similarity_scores, key=lambda x: x[1], reverse=True)[1:num_recommendations+1]
+    recommended_items = [data['item_id'].iloc[i[0]] for i in sorted_scores]
+    return recommended_items
+
+# Example usage
+print("Content-Based Recommendations for Item 101:")
+print(get_content_based_recommendations(101))
+
+### Hybrid Approach ###
+def get_hybrid_recommendations(user_id, item_id, num_recommendations=5):
+    collaborative_recs = get_collaborative_recommendations(user_id, num_recommendations)
+    content_recs = get_content_based_recommendations(item_id, num_recommendations)
+    return list(set(collaborative_recs + content_recs))[:num_recommendations]
+
+# Example usage
+print("Hybrid Recommendations for User 1 and Item 101:")
+print(get_hybrid_recommendations(1, 101))
+
+### Visualization ###
+# User-Item Matrix Heatmap
+user_item_matrix = data.pivot(index='user_id', columns='item_id', values='rating').fillna(0)
+plt.figure(figsize=(10, 8))
+sns.heatmap(user_item_matrix, cmap="YlGnBu")
+plt.title("User-Item Interaction Matrix")
+plt.xlabel("Items")
+plt.ylabel("Users")
+plt.show()
